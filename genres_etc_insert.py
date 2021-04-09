@@ -314,7 +314,8 @@ def cosine_sim(docs):
 
 def movie_to_ID(movies):
     ''' converts movies mapping from "id to title" to "title to id" '''
-    
+    inv_movies = {v: k for k, v in movies.items()}
+    return inv_movies
     pass
 
 def get_TFIDF_recommendations(prefs,cosim_matrix,user):
@@ -356,8 +357,21 @@ def get_FE_recommendations(prefs, features, movie_title_to_id, user):
         
     '''
     
+    #Create the MOVIE-FEATURE matrix
+    counter = 0
+    path = 'data/ml-100k/'
+    with open (path + '/' + 'u.item', encoding='iso8859') as myfile: 
+        # this encoding is required for some datasets: encoding='iso8859'
+        for line in myfile:
+            (line_data)=line.split('|')
+            line_data = line_data[-19:]
+            features[counter] = line_data
+            counter += 1
+            
+ 
+    
     # find more details in Final Project Specification
-    pass
+    
 
 def main():
     
@@ -581,6 +595,9 @@ def main():
             elif len(prefs) > 10:
                 print('ml-100k')   
                 userID = input('Enter username (for critics) or userid (for ml-100k) or return to quit: ')
+                
+                test = get_FE_recommendations(prefs, features, movie_to_ID(movies), userID)
+                print(test)
 
             else:
                 print ('Empty dictionary, read in some data!')
