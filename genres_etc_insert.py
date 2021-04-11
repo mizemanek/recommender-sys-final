@@ -367,8 +367,30 @@ def get_FE_recommendations(prefs, features, movie_title_to_id, user):
             line_data = line_data[-19:]
             features[counter] = line_data
             counter += 1
-            
- 
+    
+    print(prefs[user])
+    feature_preference = {}
+    for item in prefs[user]:
+        feature_preference[item] = features[int(movie_title_to_id[item])]
+    
+    for item in prefs[user].items():
+        print(item)
+        if(item[0] != None):
+            print(type(movie_title_to_id[item[0]]))
+            for i in range(len(feature_preference[item[0]])):
+                feature_preference[item[0]][i] *= item[1]
+                
+
+    print(feature_preference)
+    totals = [0] * 19 #remove hardcoding
+    for arr in feature_preference.values():
+        totals = np.add(totals, arr)
+        
+    print(totals)
+    overall_sum = np.sum(totals)
+    print(overall_sum)
+    normalized_vector = totals/overall_sum
+    print(normalized_vector)
     
     # find more details in Final Project Specification
     
