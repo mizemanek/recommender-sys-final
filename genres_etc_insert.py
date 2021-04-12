@@ -386,13 +386,46 @@ def get_FE_recommendations(prefs, features, movie_title_to_id, user):
     for arr in feature_preference.values():
         totals = np.add(totals, arr)
         
+    rated_feature_freq = [0] * 19 #bad
+    for arr in feature_preference.values():
+        for j in range(len(arr)):
+            if(arr[j] != 0):
+                rated_feature_freq[j] += 1
+    
+    print(rated_feature_freq)
+        
     print(totals)
     overall_sum = np.sum(totals)
     print(overall_sum)
     normalized_vector = totals/overall_sum
     print(normalized_vector)
     
-    # find more details in Final Project Specification
+    
+    rated_movies = prefs[user].keys()
+    rated_ids = []
+    for item in rated_movies:
+        rated_ids.append(movie_title_to_id[item])
+        
+    print(type(movie_title_to_id))
+    curr_id = 1
+    pred = []
+    for arr in features:
+        if curr_id not in list(rated_ids):
+            array_to_sum = np.multiply(arr, normalized_vector) #hadamard
+            summed = np.sum(array_to_sum)
+            #double check this
+            normalized_weight = array_to_sum / summed
+            avg_rating_arr = totals / rated_feature_freq
+            components =  np.multiply(avg_rating_arr, normalized_weight)
+            #print(components)
+
+            pred.append((np.nansum(components), curr_id))
+            
+        curr_id += 1
+    
+    pred.sort(reverse=True)
+    print(pred)
+    return pred
     
 
 def main():
