@@ -356,6 +356,12 @@ def get_FE_recommendations(prefs, features, movie_title_to_id, user):
            An empty list is returned when no recommendations have been calc'd.
         
     '''
+    num_feat = 0
+    if len(prefs) > 10:
+        num_feat = 19
+    else:
+        num_feat = 12
+    
     
     #Create the MOVIE-FEATURE matrix
     counter = 0
@@ -364,67 +370,64 @@ def get_FE_recommendations(prefs, features, movie_title_to_id, user):
         # this encoding is required for some datasets: encoding='iso8859'
         for line in myfile:
             (line_data)=line.split('|')
-            line_data = line_data[-19:]
+            line_data = line_data[-num_feat:]
             features[counter] = line_data
             counter += 1
     
-    print(prefs[user])
+    #Create a users feature profile
     feature_preference = {}
     for item in prefs[user]:
         feature_preference[item] = features[int(movie_title_to_id[item])]
     
-    for item in prefs[user].items():
-        print(item)
+    #Multiply features by their associated ratings
+    for item in prefs[user].items(): #item[0] is movie str, item[1] is rating
         if(item[0] != None):
-            print(type(movie_title_to_id[item[0]]))
             for i in range(len(feature_preference[item[0]])):
                 feature_preference[item[0]][i] *= item[1]
                 
-
-    print(feature_preference)
-    totals = [0] * 19 #remove hardcoding
+    #Create totals vector
+    totals = [0] * num_feat 
     for arr in feature_preference.values():
         totals = np.add(totals, arr)
         
-    rated_feature_freq = [0] * 19 #bad
+    #Create feature frequency vector
+    rated_feature_freq = [0] * num_feat 
     for arr in feature_preference.values():
         for j in range(len(arr)):
             if(arr[j] != 0):
                 rated_feature_freq[j] += 1
     
-    print(rated_feature_freq)
-        
-    print(totals)
+    #Calc normalized vector
     overall_sum = np.sum(totals)
-    print(overall_sum)
     normalized_vector = totals/overall_sum
-    print(normalized_vector)
     
     
+    #Create a list of rated movie ids
     rated_movies = prefs[user].keys()
     rated_ids = []
     for item in rated_movies:
         rated_ids.append(movie_title_to_id[item])
         
-    print(type(movie_title_to_id))
+    #Create a prediction for unrated items
     curr_id = 1
     pred = []
     for arr in features:
         if curr_id not in list(rated_ids):
             array_to_sum = np.multiply(arr, normalized_vector) #hadamard
             summed = np.sum(array_to_sum)
-            #double check this
+
             normalized_weight = array_to_sum / summed
             avg_rating_arr = totals / rated_feature_freq
             components =  np.multiply(avg_rating_arr, normalized_weight)
-            #print(components)
 
-            pred.append((np.nansum(components), curr_id))
+
+            pred.append(( np.nansum(components), curr_id))
             
         curr_id += 1
     
     pred.sort(reverse=True)
-    print(pred)
+    
+    
     return pred
     
 
