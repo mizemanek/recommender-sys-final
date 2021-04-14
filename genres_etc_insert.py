@@ -318,7 +318,7 @@ def movie_to_ID(movies):
     return inv_movies
     pass
 
-def get_TFIDF_recommendations(prefs,cosim_matrix,user):
+def get_TFIDF_recommendations(prefs,cosim_matrix,user,movie_title_to_id):
     '''
         Calculates recommendations for a given user 
 
@@ -335,8 +335,42 @@ def get_TFIDF_recommendations(prefs,cosim_matrix,user):
         
     '''
     
-    # find more details in Final Project Specification
-    pass
+    sim_threshold = input("Put in similarity threshold: ")
+    movie_to_movie_id = {}
+    for name_id in prefs:
+        for movie in prefs[name_id]:
+            movie_to_movie_id[(int(movie_title_to_id.get(movie)))] = movie
+    
+    for name_id in prefs:
+        total_ratings = []
+        movie_id_to_rating = {}
+        user_rated = []
+        unknown_ratings = []
+        
+        for movie in prefs[user]:
+            user_rated.append(int(movie_title_to_id.get(movie)))
+            movie_id_to_rating[int(movie_title_to_id.get(movie))] = prefs[user].get(movie)
+            
+        for num in range(1,len(cosim_matrix)+1):
+            if num not in user_rated:
+                unknown_ratings.append(num)
+        
+        for m_id in unknown_ratings:
+            if type(movie_to_movie_id.get(m_id)) == str:
+                movie_name = movie_to_movie_id.get(m_id)
+            numerator = []
+            denominator = []
+            
+            for sim in range(len(cosim_matrix[int(m_id)-1])):
+                if cosim_matrix[(int(m_id))-1][sim] >= float(sim_threshold):
+                    if (int(sim)+1) in movie_id_to_rating:
+                        numerator.append(cosim_matrix[int(m_id)-1][sim] * movie_id_to_rating.get(float(sim+1)))
+                        denominator.append(cosim_matrix[int(m_id)-1][sim])
+            if sum(denominator) != 0:
+                total_ratings.append([(sum(numerator)/sum(denominator)),movie_name])
+        
+        total_ratings = (sorted(total_ratings, key = lambda x: x[0], reverse = True))
+        return(total_ratings[0:25])
 
 def get_FE_recommendations(prefs, features, movie_title_to_id, user):
     '''
@@ -563,6 +597,9 @@ def main():
                 print()
                 print('cosine sim matrix')
                 print(cosim_matrix)
+                user = input("Which user do you want to get ratings from: ")
+                movie_title_to_id = movie_to_ID(movies)
+                print(get_TFIDF_recommendations(prefs,cosim_matrix,user,movie_title_to_id))
                  
                 '''
                 <class 'numpy.ndarray'> 
@@ -611,7 +648,9 @@ def main():
                 print('cosine sim matrix')
                 print (type(cosim_matrix), len(cosim_matrix))
                 print()
-                
+                user = input("Which user do you want to get ratings from: ")
+                movie_title_to_id = movie_to_ID(movies)
+                print(get_TFIDF_recommendations(prefs,cosim_matrix,user,movie_title_to_id))
                  
                 '''
                 <class 'numpy.ndarray'> 1682
@@ -624,21 +663,19 @@ def main():
                  [0.         0.         0.         ... 0.53394963 0.         1.        ]]
                 '''
                 
-                sims = []
-             
-                for item in cosim_matrix:
-                    for elem in item:
-                        if(elem > 0.00001 and elem < .9999):
-                            sims.append(elem)
-                        
-                fig, ax = plt.subplots(figsize=(10,7))
-                ax.hist(sims, bins=[0.0, .1, .2, .3, .4, .5, .6, .7, .8, .9, 1.0])
+                cosim_matrix2 = []
+                for i in range(len(cosim_matrix)):
+                    for j in range(len(cosim_matrix[i])):
+                        if ((i != j) and cosim_matrix[i][j] != 0):
+                            cosim_matrix2.append(cosim_matrix[i][j])
+                plt.hist(cosim_matrix2, bins = 10)
                 plt.xlabel('Cosine Similarity')
                 plt.ylabel('Frequency')
                 plt.title('Similarity Histogram')
                 plt.show()
-                        
-                
+                print("All bin mean: ", np.average(cosim_matrix2))
+                print("All bin stDev: ", np.std(cosim_matrix2))
+                    
             else:
                 print ('Empty dictionary, read in some data!')
                 print()
