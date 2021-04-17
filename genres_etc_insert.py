@@ -261,6 +261,209 @@ def to_docs(features_str, genres):
     print ('to_docs -- height: %d, width: varies' % (len(feature_docs) ) )
     return feature_docs
 
+def sim_distance(prefs, person1, person2, sim_weighting=0):
+    '''
+        Calculate Euclidean distance similarity
+        Parameters:
+        -- prefs: dictionary containing user-item matrix
+        -- person1: string containing name of user 1
+        -- person2: string containing name of user 2
+        -- sim_weighting: similarity significance weighting factor (0, 25, 50), 
+                            default is 0 [None]
+        Returns:
+        -- Euclidean distance similarity as a float
+    '''
+
+    # Get the list of shared_items
+    si = {}
+    for item in prefs[person1]:
+        if item in prefs[person2]:
+            si[item] = 1
+
+    # if they have no ratings in common, return 0
+    if len(si) == 0:
+        return 0
+
+    # Add up the squares of all the differences
+    sum_of_squares = sum([pow(prefs[person1][item]-prefs[person2][item], 2)
+                          for item in prefs[person1] if item in prefs[person2]])
+
+    distance_sim = 1/(1+np.sqrt(sum_of_squares))
+
+    # apply significance weighting, if any
+
+    if sim_weighting != 0:
+        if len(si) < sim_weighting:
+            distance_sim *= (len(si) / sim_weighting)
+
+    return distance_sim
+
+def sim_pearson(prefs, p1, p2, sim_weighting=0):
+    '''
+        Calculate Pearson Correlation similarity
+        Parameters:
+        -- prefs: dictionary containing user-item matrix
+        -- person1: string containing name of user 1
+        -- person2: string containing name of user 2
+        -- sim_weighting: similarity significance weighting factor (0, 25, 50), 
+                            default is 0 [None]
+        Returns:
+        -- Pearson Correlation similarity as a float
+    '''
+
+    # Get the list of shared_items
+    si = {}
+    for item in prefs[p1]:
+        if item in prefs[p2]:
+            si[item] = 1
+
+    # if they have no ratings in common, return 0
+    if len(si) == 0:
+        return 0
+
+    # sum_of_squares=sum([pow(prefs[person1][item]-prefs[person2][item],2)
+        # for item in prefs[person1] if item in prefs[person2]])
+
+    # calc avg rating for p1 and p2, using only shared ratings
+    x_avg = 0
+    y_avg = 0
+
+    for item in si:
+        x_avg += prefs[p1][item]
+        y_avg += prefs[p2][item]
+
+    x_avg /= len(si)
+    y_avg /= len(si)
+
+    # calc numerator of Pearson correlation formula
+    numerator = sum([(prefs[p1][item] - x_avg) * (prefs[p2][item] - y_avg)
+                     for item in si])
+
+    # calc denominator of Pearson correlation formula
+    denominator = math.sqrt(sum([(prefs[p1][item] - x_avg)**2 for item in si])) * \
+        math.sqrt(sum([(prefs[p2][item] - y_avg)**2 for item in si]))
+
+    # catch divide-by-0 errors
+    if denominator != 0:
+        sim_pearson = numerator / denominator
+
+        # apply significance weighting, if any
+        if sim_weighting != 0:
+            sim_pearson *= (len(si) / sim_weighting)
+
+        return sim_pearson
+    else:
+        return 0
+    
+def topMatches(prefs, person, similarity=sim_pearson, n=5, sim_weighting=0, sim_threshold=0):
+    '''
+        Returns the best matches for person from the prefs dictionary
+        Parameters:
+        -- prefs: dictionary containing user-item matrix
+        -- person: string containing name of user
+        -- similarity: function to calc similarity (sim_pearson is default)
+        -- n: number of matches to find/return (5 is default)
+        -- sim_weighting: similarity significance weighting factor (0, 25, 50), 
+                            default is 0 [None]
+        Returns:
+        -- A list of similar matches with 0 or more tuples,
+           each tuple contains (similarity, item name).
+           List is sorted, high to low, by similarity.
+           An empty list is returned when no matches have been calc'd.
+    '''
+    scores = []
+    for other in prefs:
+        score = similarity(prefs, person, other, sim_weighting)
+        if other != person and score > sim_threshold:
+            scores.append((score, other))
+
+    # scores = [(similarity(prefs, person, other, sim_weighting), other)
+            #   for other in prefs if other != person]
+
+    scores.sort()
+    scores.reverse()
+    return scores[0:n]
+    
+def transformPrefs(prefs):
+    '''
+        Transposes U-I matrix (prefs dictionary)
+        Parameters:
+        -- prefs: dictionary containing user-item matrix
+        Returns:
+        -- A transposed U-I matrix, i.e., if prefs was a U-I matrix,
+           this function returns an I-U matrix
+    '''
+
+    result = {}
+    for person in prefs:
+        for item in prefs[person]:
+            result.setdefault(item, {})
+            # Flip item and person
+            result[item][person] = prefs[person][item]
+    return result
+
+def calculateSimilarItems(prefs, n=100, similarity=sim_pearson, sim_weighting=0, sim_threshold=0):
+    '''
+        Creates a dictionary of items showing which other items they are most
+        similar to.
+        Parameters:
+        -- prefs: dictionary containing user-item matrix
+        -- n: number of similar matches for topMatches() to return
+        -- similarity: function to calc similarity (sim_pearson is default)
+        -- sim_weighting: similarity significance weighting factor (0, 25, 50), 
+                            default is 0 [None]
+        Returns:
+        -- A dictionary with a similarity matrix
+    '''
+
+    result = {}
+    c = 0
+
+    # Invert the preference matrix to be item-centric
+    itemPrefs = transformPrefs(prefs)
+
+    for item in itemPrefs:
+      # Status updates for larger datasets
+        c += 1
+        if c % 100 == 0:
+            percent_complete = (100*c)/len(itemPrefs)
+            print(str(percent_complete)+"% complete")
+
+        # Find the most similar items to this one
+        scores = topMatches(itemPrefs, item, similarity, n,
+                            sim_weighting, sim_threshold)
+        result[item] = scores
+    return result
+
+def update_Cosim_Matrix(movie_title_to_id,itemsim,cosim_matrix):
+    weight_factor = input("Choose a Weight Factor (0,.25,.5,1): ")
+    if float(weight_factor) > 1 or float(weight_factor) < 0:
+        weight_factor = input("Weight Factor must be between 0 and 1. Please try again: ")
+    updated_matrix = np.copy(cosim_matrix)
+    movie_id = []
+    m_id = []
+    for movie in itemsim:
+        movie_id.append(movie_title_to_id.get(movie))
+    
+    for movie in itemsim:
+        name_sim = {}
+        num = []
+        for j in (itemsim[movie]):
+            sim, name = j
+            name_sim[movie_title_to_id.get(name)] = sim
+        for i in movie_id:
+            if i not in name_sim:
+                name_sim[i] = 0
+        
+        for key in range(1,len(itemsim)+1):
+            num.append(name_sim.get(str(key)))
+        m_id.append(num)
+        
+    for i in range(len(cosim_matrix)):
+        for j in range(len(cosim_matrix[i])):
+            if cosim_matrix[i][j] == 0:
+                updated_matrix[i][j] = float(float(weight_factor) * m_id[i][j])
+    return(updated_matrix)
 def cosine_sim(docs):
     ''' Perofmrs cosine sim calcs on features list, aka docs in TF-IDF world
     
@@ -334,8 +537,10 @@ def get_TFIDF_recommendations(prefs,cosim_matrix,user,movie_title_to_id):
            An empty list is returned when no recommendations have been calc'd.
         
     '''
+    sim_threshold = input("Choose a Similarity Threshold (0,.340,.530,.903,1): ")
+    if int(sim_threshold) > 1 or int(sim_threshold) < 0:
+        sim_threshold = input("Similarity Threshold must be between 0 and 1. Please try again: ")
     
-    sim_threshold = input("Put in similarity threshold: ")
     movie_to_movie_id = {}
     for name_id in prefs:
         for movie in prefs[name_id]:
@@ -370,8 +575,8 @@ def get_TFIDF_recommendations(prefs,cosim_matrix,user,movie_title_to_id):
                 total_ratings.append([(sum(numerator)/sum(denominator)),movie_name])
         
         total_ratings = (sorted(total_ratings, key = lambda x: x[0], reverse = True))
-        return(total_ratings[0:25])
-
+        return(total_ratings[0:15])
+    
 def get_FE_recommendations(prefs, features, movie_title_to_id, user):
     '''
         Calculates recommendations for a given user 
