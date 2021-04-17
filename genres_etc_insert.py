@@ -699,15 +699,105 @@ def main():
                 print()
 
         elif file_io == 'CBR-TF' or file_io == 'cbr-tf':
-            print()
+            if len(prefs) > 0:
+                ready = False  # subc command in progress
+
+                sim_weighting = input(
+                    'Enter similarity significance weighting n/(sim_weighting): 0 [None], 25, 50\n')
+
+                if int(sim_weighting) != 25 and int(sim_weighting) != 50:
+                    sim_weighting = 0
+                    print(
+                        'ALERT: invalid option or 0 was selected, defaulting to no weighting\n')
+                else:
+                    sim_weighting = int(sim_weighting)
+                    print("similarity weighting set to {}".format(sim_weighting))
+
+                # prompt for similarity thresold, if any
+                sim_threshold = input(
+                    'Enter similarity threshold: >0, >0.3, >0.5\n')
+                if '3' in sim_threshold:
+                    sim_threshold = 0.3
+                    print('sim_threshold set to >0.3\n')
+                elif '5' in sim_threshold:
+                    sim_threshold = 0.5
+                    print('sim_threshold set to >0.5\n')
+                else:
+                    sim_threshold = float(sim_threshold)
+                    print('ALERT: invalid option selected, defaulting to >0\n')
+
+                sub_cmd = input(
+                    'RD(ead) distance or RP(ead) pearson or WD(rite) distance or WP(rite) pearson?\n')
+
+                try:
+                    if sub_cmd == 'RD' or sub_cmd == 'rd':
+                        # Load the dictionary back from the pickle file.
+                        itemsim = pickle.load(
+                            open("save_itemsim_distance.p", "rb"))
+                        sim_method = 'sim_distance'
+
+                    elif sub_cmd == 'RP' or sub_cmd == 'rp':
+                        # Load the dictionary back from the pickle file.
+                        itemsim = pickle.load(
+                            open("save_itemsim_pearson.p", "rb"))
+                        sim_method = 'sim_pearson'
+
+                    elif sub_cmd == 'WD' or sub_cmd == 'wd':
+                        # transpose the U-I matrix and calc item-item similarities matrix
+                        itemsim = calculateSimilarItems(
+                            prefs, similarity=sim_distance, sim_weighting=sim_weighting, sim_threshold=sim_threshold)
+                        # Dump/save dictionary to a pickle file
+                        pickle.dump(itemsim, open(
+                            "save_itemsim_distance.p", "wb"))
+                        sim_method = 'sim_distance'
+
+                    elif sub_cmd == 'WP' or sub_cmd == 'wp':
+                        # transpose the U-I matrix and calc item-item similarities matrix
+
+                        itemsim = calculateSimilarItems(
+                            prefs, similarity=sim_pearson, sim_weighting=sim_weighting, sim_threshold=sim_threshold)
+                        # Dump/save dictionary to a pickle file
+                        pickle.dump(itemsim, open(
+                            "save_itemsim_pearson.p", "wb"))
+                        sim_method = 'sim_pearson'
+
+                    else:
+                        print("Sim sub-command %s is invalid, try again" % sub_cmd)
+                        continue
+
+                    ready = True  # sub command completed successfully
+
+                except Exception as ex:
+                    print('Error!!', ex, '\nNeed to W(rite) a file before you can R(ead) it!'
+                          ' Enter Sim(ilarity matrix) again and choose a Write command')
+                    print()
+
+                if len(itemsim) > 0 and ready == True and len(itemsim) <= 10:
+                    # Only want to print if sub command completed successfully
+                    print('Similarity matrix based on %s, len = %d'
+                          % (sim_method, len(itemsim)))
+                    print()
+            else:
+                print('Empty dictionary, R(ead) in some data!')
+            R = to_array(prefs)
+            feature_str = to_string(features)                 
+            feature_docs = to_docs(feature_str, genres)
             # determine the U-I matrix to use ..
             if len(prefs) > 0 and len(prefs) <= 10: # critics
-                print('critics') 
+                print('critics')
                 userID = input('Enter username (for critics) or userid (for ml-100k) or return to quit: ')
-
+                cosim_matrix = cosine_sim(feature_docs)
+                movie_title_to_id = movie_to_ID(movies)
+                updated_matrix = update_Cosim_Matrix(movie_title_to_id,itemsim,cosim_matrix)
+                print(get_TFIDF_recommendations(prefs,updated_matrix,userID,movie_title_to_id))
+            
             elif len(prefs) > 10:
-                print('ml-100k')   
+                print('ml-100k')
                 userID = input('Enter username (for critics) or userid (for ml-100k) or return to quit: ')
+                cosim_matrix = cosine_sim(feature_docs)
+                movie_title_to_id = movie_to_ID(movies)
+                updated_matrix = update_Cosim_Matrix(movie_title_to_id,itemsim,cosim_matrix)
+                print(get_TFIDF_recommendations(prefs,updated_matrix,userID,movie_title_to_id))
                 
             else:
                 print ('Empty dictionary, read in some data!')
