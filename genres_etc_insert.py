@@ -391,15 +391,21 @@ def get_FE_recommendations(prefs, features, movie_title_to_id, user):
         
     '''
     num_feat = 0
+    path = ''
+    item_file = ''
     if len(prefs) > 10:
         num_feat = 19
+        path = 'data/ml-100k/'
+        item_file = 'u.item'
     else:
         num_feat = 12
+        path = 'data/'
+        item_file = 'critics_movies.item'
 
     #Create the MOVIE-FEATURE matrix
     counter = 0
     path = 'data/ml-100k/'
-    with open (path + '/' + 'u.item', encoding='iso8859') as myfile: 
+    with open (path + '/' + item_file, encoding='iso8859') as myfile: 
         # this encoding is required for some datasets: encoding='iso8859'
         for line in myfile:
             (line_data)=line.split('|')
@@ -423,8 +429,7 @@ def get_FE_recommendations(prefs, features, movie_title_to_id, user):
     totals = [0] * num_feat 
     for arr in feature_preference.values():
         totals = np.add(totals, arr)
-    
-    print(totals)
+
 
     #Create feature frequency vector
     rated_feature_freq = [0] * num_feat 
