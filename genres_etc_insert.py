@@ -395,8 +395,7 @@ def get_FE_recommendations(prefs, features, movie_title_to_id, user):
         num_feat = 19
     else:
         num_feat = 12
-    
-    
+
     #Create the MOVIE-FEATURE matrix
     counter = 0
     path = 'data/ml-100k/'
@@ -411,7 +410,8 @@ def get_FE_recommendations(prefs, features, movie_title_to_id, user):
     #Create a users feature profile
     feature_preference = {}
     for item in prefs[user]:
-        feature_preference[item] = features[int(movie_title_to_id[item])]
+        feature_preference[item] = features[int(movie_title_to_id[item])-1]
+
     
     #Multiply features by their associated ratings
     for item in prefs[user].items(): #item[0] is movie str, item[1] is rating
@@ -423,7 +423,9 @@ def get_FE_recommendations(prefs, features, movie_title_to_id, user):
     totals = [0] * num_feat 
     for arr in feature_preference.values():
         totals = np.add(totals, arr)
-        
+    
+    print(totals)
+
     #Create feature frequency vector
     rated_feature_freq = [0] * num_feat 
     for arr in feature_preference.values():
@@ -446,11 +448,12 @@ def get_FE_recommendations(prefs, features, movie_title_to_id, user):
     curr_id = 1
     pred = []
     for arr in features:
-        if curr_id not in list(rated_ids):
+        if curr_id not in list(rated_ids) and (True in np.logical_and(features[curr_id-1], totals)):
             array_to_sum = np.multiply(arr, normalized_vector) #hadamard
+            
             summed = np.sum(array_to_sum)
-
-            normalized_weight = array_to_sum / summed
+            if(summed != 0):
+                normalized_weight = array_to_sum / summed
             avg_rating_arr = totals / rated_feature_freq
             components =  np.multiply(avg_rating_arr, normalized_weight)
 
@@ -690,9 +693,14 @@ def main():
             elif len(prefs) > 10:
                 print('ml-100k')   
                 userID = input('Enter username (for critics) or userid (for ml-100k) or return to quit: ')
-                
+                #print(movies)
+                replace = []
                 test = get_FE_recommendations(prefs, features, movie_to_ID(movies), userID)
-                print(test)
+                for elem in test:
+                    temp = movies[str(elem[1])]
+                    replace.append(  ((elem[0], temp)) )
+                    
+                print(replace)
 
             else:
                 print ('Empty dictionary, read in some data!')
