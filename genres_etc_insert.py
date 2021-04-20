@@ -22,6 +22,8 @@ import numpy as np
 import pandas as pd
 import math
 import os
+import copy
+import pickle
 from matplotlib import pyplot as plt
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
@@ -318,7 +320,7 @@ def movie_to_ID(movies):
     return inv_movies
     pass
 
-def get_TFIDF_recommendations(prefs,cosim_matrix,user,movie_title_to_id):
+def get_TFIDF_recommendations(prefs,cosim_matrix,user,movie_title_to_id,sim_threshold):
     '''
         Calculates recommendations for a given user 
 
@@ -334,8 +336,12 @@ def get_TFIDF_recommendations(prefs,cosim_matrix,user,movie_title_to_id):
            An empty list is returned when no recommendations have been calc'd.
         
     '''
-    
-    sim_threshold = input("Put in similarity threshold: ")
+    n = input("Enter a value for n, the number of top rankings to select: ")
+    """
+    sim_threshold = input("Choose a Similarity Threshold (0,.340,.530,.903,1): ")
+    if int(sim_threshold) > 1 or int(sim_threshold) < 0:
+        sim_threshold = input("Similarity Threshold must be between 0 and 1. Please try again: ")
+    """
     movie_to_movie_id = {}
     for name_id in prefs:
         for movie in prefs[name_id]:
@@ -370,7 +376,7 @@ def get_TFIDF_recommendations(prefs,cosim_matrix,user,movie_title_to_id):
                 total_ratings.append([(sum(numerator)/sum(denominator)),movie_name])
         
         total_ratings = (sorted(total_ratings, key = lambda x: x[0], reverse = True))
-        return(total_ratings[0:25])
+        return(total_ratings[0:int(n)])
 
 def get_FE_recommendations(prefs, features, movie_title_to_id, user):
     '''
@@ -471,7 +477,348 @@ def get_FE_recommendations(prefs, features, movie_title_to_id, user):
     
     
     return pred
+def sim_distance(prefs, person1, person2, sim_weighting=0):
+    '''
+        Calculate Euclidean distance similarity
+        Parameters:
+        -- prefs: dictionary containing user-item matrix
+        -- person1: string containing name of user 1
+        -- person2: string containing name of user 2
+        -- sim_weighting: similarity significance weighting factor (0, 25, 50), 
+                            default is 0 [None]
+        Returns:
+        -- Euclidean distance similarity as a float
+    '''
+
+    # Get the list of shared_items
+    si = {}
+    for item in prefs[person1]:
+        if item in prefs[person2]:
+            si[item] = 1
+
+    # if they have no ratings in common, return 0
+    if len(si) == 0:
+        return 0
+
+    # Add up the squares of all the differences
+    sum_of_squares = sum([pow(prefs[person1][item]-prefs[person2][item], 2)
+                          for item in prefs[person1] if item in prefs[person2]])
+
+    distance_sim = 1/(1+np.sqrt(sum_of_squares))
+
+    # apply significance weighting, if any
+
+    if sim_weighting != 0:
+        if len(si) < sim_weighting:
+            distance_sim *= (len(si) / sim_weighting)
+
+    return distance_sim
+
+def sim_pearson(prefs, p1, p2, sim_weighting=0):
+    '''
+        Calculate Pearson Correlation similarity
+        Parameters:
+        -- prefs: dictionary containing user-item matrix
+        -- person1: string containing name of user 1
+        -- person2: string containing name of user 2
+        -- sim_weighting: similarity significance weighting factor (0, 25, 50), 
+                            default is 0 [None]
+        Returns:
+        -- Pearson Correlation similarity as a float
+    '''
+
+    # Get the list of shared_items
+    si = {}
+    for item in prefs[p1]:
+        if item in prefs[p2]:
+            si[item] = 1
+
+    # if they have no ratings in common, return 0
+    if len(si) == 0:
+        return 0
+
+    # sum_of_squares=sum([pow(prefs[person1][item]-prefs[person2][item],2)
+        # for item in prefs[person1] if item in prefs[person2]])
+
+    # calc avg rating for p1 and p2, using only shared ratings
+    x_avg = 0
+    y_avg = 0
+
+    for item in si:
+        x_avg += prefs[p1][item]
+        y_avg += prefs[p2][item]
+
+    x_avg /= len(si)
+    y_avg /= len(si)
+
+    # calc numerator of Pearson correlation formula
+    numerator = sum([(prefs[p1][item] - x_avg) * (prefs[p2][item] - y_avg)
+                     for item in si])
+
+    # calc denominator of Pearson correlation formula
+    denominator = math.sqrt(sum([(prefs[p1][item] - x_avg)**2 for item in si])) * \
+        math.sqrt(sum([(prefs[p2][item] - y_avg)**2 for item in si]))
+
+    # catch divide-by-0 errors
+    if denominator != 0:
+        sim_pearson = numerator / denominator
+
+        # apply significance weighting, if any
+        if sim_weighting != 0:
+            sim_pearson *= (len(si) / sim_weighting)
+
+        return sim_pearson
+    else:
+        return 0
     
+def topMatches(prefs, person, similarity=sim_pearson, n=5, sim_weighting=0, sim_threshold=0):
+    '''
+        Returns the best matches for person from the prefs dictionary
+        Parameters:
+        -- prefs: dictionary containing user-item matrix
+        -- person: string containing name of user
+        -- similarity: function to calc similarity (sim_pearson is default)
+        -- n: number of matches to find/return (5 is default)
+        -- sim_weighting: similarity significance weighting factor (0, 25, 50), 
+                            default is 0 [None]
+        Returns:
+        -- A list of similar matches with 0 or more tuples,
+           each tuple contains (similarity, item name).
+           List is sorted, high to low, by similarity.
+           An empty list is returned when no matches have been calc'd.
+    '''
+    scores = []
+    for other in prefs:
+        score = similarity(prefs, person, other, sim_weighting)
+        if other != person and score > sim_threshold:
+            scores.append((score, other))
+
+    # scores = [(similarity(prefs, person, other, sim_weighting), other)
+            #   for other in prefs if other != person]
+
+    scores.sort()
+    scores.reverse()
+    return scores[0:n]
+    
+def transformPrefs(prefs):
+    '''
+        Transposes U-I matrix (prefs dictionary)
+        Parameters:
+        -- prefs: dictionary containing user-item matrix
+        Returns:
+        -- A transposed U-I matrix, i.e., if prefs was a U-I matrix,
+           this function returns an I-U matrix
+    '''
+
+    result = {}
+    for person in prefs:
+        for item in prefs[person]:
+            result.setdefault(item, {})
+            # Flip item and person
+            result[item][person] = prefs[person][item]
+    return result
+
+def calculateSimilarItems(prefs, n=100, similarity=sim_pearson, sim_weighting=0, sim_threshold=0):
+    '''
+        Creates a dictionary of items showing which other items they are most
+        similar to.
+        Parameters:
+        -- prefs: dictionary containing user-item matrix
+        -- n: number of similar matches for topMatches() to return
+        -- similarity: function to calc similarity (sim_pearson is default)
+        -- sim_weighting: similarity significance weighting factor (0, 25, 50), 
+                            default is 0 [None]
+        Returns:
+        -- A dictionary with a similarity matrix
+    '''
+
+    result = {}
+    c = 0
+
+    # Invert the preference matrix to be item-centric
+    itemPrefs = transformPrefs(prefs)
+
+    for item in itemPrefs:
+      # Status updates for larger datasets
+        c += 1
+        if c % 100 == 0:
+            percent_complete = (100*c)/len(itemPrefs)
+            print(str(percent_complete)+"% complete")
+
+        # Find the most similar items to this one
+        scores = topMatches(itemPrefs, item, similarity, n,
+                            sim_weighting, sim_threshold)
+        result[item] = scores
+    return result
+
+def update_Cosim_Matrix(movie_title_to_id,itemsim,cosim_matrix,weight_factor):
+    updated_matrix = np.copy(cosim_matrix)
+    movie_id = []
+    m_id = []
+    for movie in itemsim:
+        movie_id.append(movie_title_to_id.get(movie))
+    
+    for movie in itemsim:
+        name_sim = {}
+        num = []
+        for j in (itemsim[movie]):
+            sim, name = j
+            name_sim[movie_title_to_id.get(name)] = sim
+        for i in movie_id:
+            if i not in name_sim:
+                name_sim[i] = 0
+        
+        for key in range(1,len(itemsim)+1):
+            num.append(name_sim.get(str(key)))
+        m_id.append(num)
+        
+    for i in range(len(cosim_matrix)):
+        for j in range(len(cosim_matrix[i])):
+            if cosim_matrix[i][j] == 0:
+                updated_matrix[i][j] = float(float(weight_factor) * m_id[i][j])
+                
+    return(updated_matrix)
+                
+def new_dictionary(movie_title_to_id,updated_matrix):
+    
+    updated_dict = {}
+    id_to_movie_name = {value:key for key, value in movie_title_to_id.items()}
+    movies = []
+    list_of_sim = []
+    list_of_movies_sim = []
+    inner_dicts = []
+    
+    for i in range(1,len(updated_matrix)+1):
+        movies.append(id_to_movie_name.get(str(i)))
+        
+    for i in range(len(updated_matrix)):
+        sim = []
+        for j in range(len(updated_matrix[i])):
+            sim.append(updated_matrix[i][j])
+        list_of_sim.append(sim)
+    
+    
+    for sim in range(len(list_of_sim)):
+        movies_sim = []
+        for movie in range(len(list_of_sim[sim])):
+            movies_sim.append((movies[movie],list_of_sim[sim][movie]))
+        list_of_movies_sim.append(movies_sim)
+    
+    for movie in range(len(list_of_movies_sim)):
+        list_of_dict = []
+        for name,similarity in list_of_movies_sim[movie]:
+            dict_name_sim = {name : similarity}
+            list_of_dict.append(dict_name_sim)
+        inner_dicts.append(list_of_dict)
+    
+    
+    for i in range(len(movies)):
+        updated_dict[movies[i]] = inner_dicts[i]
+    return(updated_dict)
+def getRecommendedItems(prefs, movie_title_to_id, itemMatch, user, sim_threshold=0):
+    '''
+        Calculates recommendations for a given user
+        Parameters:
+        -- prefs: dictionary containing user-item matrix
+        -- itemMatch: dictionary containing similarity matrix
+        -- user: string containing name of user
+        -- sim_threshold: minimum similarity to be considered a neighbor, default is >0
+        Returns:
+        -- A list of recommended items with 0 or more tuples,
+           each tuple contains (predicted rating, item name).
+           List is sorted, high to low, by predicted rating.
+           An empty list is returned when no recommendations have been calc'd.
+    '''
+    userRatings = prefs[user]
+    scores = {}
+    totalSim = {}
+    id_to_movie_name = {value:key for key, value in movie_title_to_id.items()}
+    
+    for movies in range(1,len(itemMatch)+1):
+        for inner_movies in itemMatch[id_to_movie_name.get(str(movies))]:
+            movie_name = list(inner_movies.keys())[0]
+            if movie_name not in userRatings:
+                continue
+            if inner_movies[movie_name] <= sim_threshold:
+                continue
+            
+            scores.setdefault(movie_name,0)
+            scores[movie_name] += userRatings[movie_name]*inner_movies[movie_name]
+            
+            totalSim.setdefault(movie_name,0)
+            totalSim[movie_name] += inner_movies[movie_name]
+    
+    rankings = [(score/totalSim[item], item) for item, score in scores.items()]       
+    rankings.sort()
+    rankings.reverse()
+    
+    return rankings        
+            
+def loo_cv_sim(prefs, movie_title_to_id, sim, user, algo, sim_matrix, sim_threshold=0):
+    '''
+    Leave-One_Out Evaluation: evaluates recommender system ACCURACY
+     Parameters:
+         -- prefs dataset: critics, MLK-100k
+         -- sim: distance, pearson
+         -- algo: user-based (getRecommendationSim), item-based recommender (getRecommendedItems)
+         -- sim_matrix: pre-computed similarity matrix
+         -- sim_weighting: similarity significance weighting factor (0, 25, 50), default is 0 [None]
+         -- sim_threshold: minimum similarity to be considered a neighbor, default is >0
+    Returns:
+         -- errors: MSE, MAE, RMSE totals for this set of conditions
+         -- error_lists: MSE and MAE lists of actual-predicted differences
+    '''
+    errors = {}
+    error_lists = {}
+    mse_list = []
+    mae_list = []
+
+    pred_found = False
+    recs = []
+
+    c = 0
+
+    # Create a temp copy of prefs
+    prefs_cp = copy.deepcopy(prefs)
+
+    for i in prefs:
+        # Progress status
+        c += 1
+        if c % 25 == 0:
+            percent_complete = (100*c)/len(prefs)
+            print("%.2f %% complete" % percent_complete)
+
+        for item in prefs[i]:
+            removed_rating = prefs_cp[i].pop(item)
+            recs = algo(prefs_cp, movie_title_to_id, sim_matrix, user, sim_threshold)
+            
+            for rec in recs:
+                if item in rec:
+                    pred_found = True
+                    
+                    predicted_rating = rec[0]
+                    error_mse = (predicted_rating - removed_rating)**2
+                    error_mae = abs(predicted_rating - removed_rating)
+                    mse_list.append(error_mse)
+                    mae_list.append(error_mae)
+                    # print('User : {}, Item: {}, Prediction {}, Actual: {}, Error: {}, Absolute Error: {}'.format(
+                    # user, item, predicted_rating, removed_rating, error_mse, error_mae))
+            if pred_found == False:
+                # print('From loo_cv(), No prediction calculated for item {}, user {} in pred_list: {}'.format(
+                # item, user, recs))
+                pass
+            pred_found = False
+            prefs_cp[user][item] = removed_rating
+
+    errors['mse'] = np.average(mse_list)
+    errors['mae'] = np.average(mae_list)
+    errors['rmse'] = np.sqrt(np.average(mse_list))
+
+    error_lists['(r)mse'] = mse_list
+    error_lists['mae'] = mae_list
+
+    return errors, error_lists
+
 
 def main():
     
@@ -491,6 +838,7 @@ def main():
                         'TFIDF(and cosine sim Setup)?, \n'
                         'CBR-FE(content-based recommendation Feature Encoding)?, \n'
                         'CBR-TF(content-based recommendation TF-IDF/CosineSim)? \n'
+                        'LCVSIM(eave one out cross-validation)? \n'
                         '==>> '
                         )
         
@@ -573,8 +921,6 @@ def main():
                 print()
 
         elif file_io == 'TFIDF' or file_io == 'tfidf':
-            print()
-            # determine the U-I matrix to use ..
             if len(prefs) > 0 and len(prefs) <= 10: # critics
                 # convert prefs dictionary into 2D list
                 R = to_array(prefs)
@@ -607,7 +953,11 @@ def main():
                 print(cosim_matrix)
                 user = input("Which user do you want to get ratings from: ")
                 movie_title_to_id = movie_to_ID(movies)
-                print(get_TFIDF_recommendations(prefs,cosim_matrix,user,movie_title_to_id))
+                sim_threshold = input("Choose a Similarity Threshold (0,.340,.530,.903,1): ")
+                if float(sim_threshold) > 1 or float(sim_threshold) < 0:
+                    sim_threshold = input("Similarity Threshold must be between 0 and 1. Please try again: ")
+                sim_threshold = float(sim_threshold)
+                print(get_TFIDF_recommendations(prefs,cosim_matrix,user,movie_title_to_id,sim_threshold))
                  
                 '''
                 <class 'numpy.ndarray'> 
@@ -620,29 +970,18 @@ def main():
                 [0.61834884 0.         0.         0.         0.         1.        ]]
                 '''
                 
-                #print and plot histogram of similarites
-                sims = []
-             
-                for item in cosim_matrix:
-                    for elem in item:
-                        sims.append(elem)
-                        
-                fig, ax = plt.subplots(figsize=(10,7))
-                ax.hist(sims, bins=[0.0,.2,.4,.6,.8,1.0])
                 
-                plt.xlabel('Cosine Similarity')
-                plt.ylabel('Frequency')
-                plt.title('Similarity Histogram')
-                plt.show()
-                        
 
 
             elif len(prefs) > 10:
-                print('ml-100k')   
+                print('ml-100k')
                 # convert prefs dictionary into 2D list
                 R = to_array(prefs)
                 feature_str = to_string(features)                 
                 feature_docs = to_docs(feature_str, genres)
+                
+                
+                
                 
                 print(R[:3][:5])
                 print()
@@ -656,10 +995,15 @@ def main():
                 print('cosine sim matrix')
                 print (type(cosim_matrix), len(cosim_matrix))
                 print()
+                print(cosim_matrix)
                 user = input("Which user do you want to get ratings from: ")
                 movie_title_to_id = movie_to_ID(movies)
-                print(get_TFIDF_recommendations(prefs,cosim_matrix,user,movie_title_to_id))
-                 
+                sim_threshold = input("Choose a Similarity Threshold (0,.340,.530,.903,1): ")
+                if float(sim_threshold) > 1 or float(sim_threshold) < 0:
+                    sim_threshold = input("Similarity Threshold must be between 0 and 1. Please try again: ")
+                sim_threshold = float(sim_threshold)
+                print(get_TFIDF_recommendations(prefs,cosim_matrix,user,movie_title_to_id,sim_threshold))
+                
                 '''
                 <class 'numpy.ndarray'> 1682
                 
@@ -670,20 +1014,19 @@ def main():
                  [0.         0.30700538 0.57195272 ... 0.19392295 0.         0.36318585]
                  [0.         0.         0.         ... 0.53394963 0.         1.        ]]
                 '''
-                
                 cosim_matrix2 = []
                 for i in range(len(cosim_matrix)):
                     for j in range(len(cosim_matrix[i])):
                         if ((i != j) and cosim_matrix[i][j] != 0):
                             cosim_matrix2.append(cosim_matrix[i][j])
+                
+                    
                 plt.hist(cosim_matrix2, bins = 10)
-                plt.xlabel('Cosine Similarity')
-                plt.ylabel('Frequency')
-                plt.title('Similarity Histogram')
-                plt.show()
+                
                 print("All bin mean: ", np.average(cosim_matrix2))
                 print("All bin stDev: ", np.std(cosim_matrix2))
-                    
+                plt.show()     
+                
             else:
                 print ('Empty dictionary, read in some data!')
                 print()
@@ -710,8 +1053,9 @@ def main():
             else:
                 print ('Empty dictionary, read in some data!')
                 print()
-
+          
         elif file_io == 'CBR-TF' or file_io == 'cbr-tf':
+            print()
             if len(prefs) > 0:
                 ready = False  # subc command in progress
 
@@ -727,17 +1071,10 @@ def main():
                     print("similarity weighting set to {}".format(sim_weighting))
 
                 # prompt for similarity thresold, if any
-                sim_threshold = input(
-                    'Enter similarity threshold: >0, >0.3, >0.5\n')
-                if '3' in sim_threshold:
-                    sim_threshold = 0.3
-                    print('sim_threshold set to >0.3\n')
-                elif '5' in sim_threshold:
-                    sim_threshold = 0.5
-                    print('sim_threshold set to >0.5\n')
-                else:
-                    sim_threshold = float(sim_threshold)
-                    print('ALERT: invalid option selected, defaulting to >0\n')
+                sim_threshold = input("Choose a Similarity Threshold (0,.340,.530,.903,1): ")
+                if float(sim_threshold) > 1 or float(sim_threshold) < 0:
+                    sim_threshold = input("Similarity Threshold must be between 0 and 1. Please try again: ")
+                sim_threshold = float(sim_threshold)
 
                 sub_cmd = input(
                     'RD(ead) distance or RP(ead) pearson or WD(rite) distance or WP(rite) pearson?\n')
@@ -792,33 +1129,74 @@ def main():
                     print()
             else:
                 print('Empty dictionary, R(ead) in some data!')
+                return
+            
             R = to_array(prefs)
             feature_str = to_string(features)                 
             feature_docs = to_docs(feature_str, genres)
             # determine the U-I matrix to use ..
+            
             if len(prefs) > 0 and len(prefs) <= 10: # critics
                 print('critics')
                 userID = input('Enter username (for critics) or userid (for ml-100k) or return to quit: ')
+                weight_factor = input("Choose a Weight Factor (0,.25,.5,.75,1): ")
+                if float(weight_factor) > 1 or float(weight_factor) < 0:
+                    weight_factor = input("Weight Factor must be between 0 and 1. Please try again: ")
                 cosim_matrix = cosine_sim(feature_docs)
                 movie_title_to_id = movie_to_ID(movies)
-                updated_matrix = update_Cosim_Matrix(movie_title_to_id,itemsim,cosim_matrix)
-                print(get_TFIDF_recommendations(prefs,updated_matrix,userID,movie_title_to_id))
+                updated_matrix = update_Cosim_Matrix(movie_title_to_id,itemsim,cosim_matrix,weight_factor)
+                print(get_TFIDF_recommendations(prefs,updated_matrix,userID,movie_title_to_id,sim_threshold))
             
             elif len(prefs) > 10:
                 print('ml-100k')
                 userID = input('Enter username (for critics) or userid (for ml-100k) or return to quit: ')
+                weight_factor = input("Choose a Weight Factor (0,.25,.5,.75,1): ")
+                if float(weight_factor) > 1 or float(weight_factor) < 0:
+                    weight_factor = input("Weight Factor must be between 0 and 1. Please try again: ")
                 cosim_matrix = cosine_sim(feature_docs)
                 movie_title_to_id = movie_to_ID(movies)
-                updated_matrix = update_Cosim_Matrix(movie_title_to_id,itemsim,cosim_matrix)
-                print(get_TFIDF_recommendations(prefs,updated_matrix,userID,movie_title_to_id))
+                updated_matrix = update_Cosim_Matrix(movie_title_to_id,itemsim,cosim_matrix,weight_factor)
+                print(get_TFIDF_recommendations(prefs,updated_matrix,userID,movie_title_to_id,sim_threshold))
                 
             else:
                 print ('Empty dictionary, read in some data!')
                 print()
+        
+        elif file_io == 'LCVSIM' or file_io == 'lcvsim':
+            print()
+            
+            updated_matrix = update_Cosim_Matrix(movie_title_to_id,itemsim,cosim_matrix,weight_factor)
+            updated_dict = new_dictionary(movie_title_to_id,updated_matrix)
+            movie_title_to_id = movie_to_ID(movies)
+            
+            
+            if len(prefs) > 0 and updated_dict != {}:
+                print('LOO_CV_SIM Evaluation')
+
+                # check for small or large dataset (for print statements)
+                if len(prefs) <= 7:
+                    prefs_name = 'critics'
+                else:
+                    prefs_name = 'MLK-100k'
+
+                if sim_method == 'sim_pearson':
+                    sim = sim_pearson
+                else:
+                    sim = sim_distance
+                errors, error_lists = loo_cv_sim(
+                    prefs, movie_title_to_id, sim, userID, getRecommendedItems, updated_dict, sim_threshold=sim_threshold)
+                print('Errors for %s: MSE = %.5f, MAE = %.5f, RMSE = %.5f, len(SE list): %d, using %s with sim_threshold >%0.1f and sim_weighting of %s'
+                      % (prefs_name, errors['mse'], errors['mae'], errors['rmse'], len(error_lists['(r)mse']), sim_method, sim_threshold, str(len(error_lists['(r)mse']))+'/' + str(sim_weighting)))
+                print()
+
+            else:
+                print(
+                    'Empty dictionary, run R(ead) OR Empty Sim Matrix, run Simu(ilarity matrix!')
+
 
         else:
             done = True
-        
+       
     print('Goodbye!')  
     
 if __name__ == "__main__":
