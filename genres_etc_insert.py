@@ -715,13 +715,14 @@ def new_dictionary(movie_title_to_id,updated_matrix):
     for i in range(len(movies)):
         updated_dict[movies[i]] = inner_dicts[i]
     return(updated_dict)
-def getRecommendedItems(prefs, movie_title_to_id, itemMatch, user, sim_threshold=0):
+def getRecommendedItems(prefs, movie_title_to_id, itemMatch, user, item, sim_threshold=0):
     '''
         Calculates recommendations for a given user
         Parameters:
         -- prefs: dictionary containing user-item matrix
         -- itemMatch: dictionary containing similarity matrix
         -- user: string containing name of user
+        -- item: The movie we are searching for
         -- sim_threshold: minimum similarity to be considered a neighbor, default is >0
         Returns:
         -- A list of recommended items with 0 or more tuples,
@@ -729,32 +730,38 @@ def getRecommendedItems(prefs, movie_title_to_id, itemMatch, user, sim_threshold
            List is sorted, high to low, by predicted rating.
            An empty list is returned when no recommendations have been calc'd.
     '''
+    
     userRatings = prefs[user]
-    scores = {}
-    totalSim = {}
-    id_to_movie_name = {value:key for key, value in movie_title_to_id.items()}
     
-    for movies in range(1,len(itemMatch)+1):
-        for inner_movies in itemMatch[id_to_movie_name.get(str(movies))]:
-            movie_name = list(inner_movies.keys())[0]
-            if movie_name not in userRatings:
+    sim_ratings = itemMatch[item]
+   
+    movie_names = []
+    scores = 0
+    totalSim = 0
+    
+    
+    
+       
+    for num in range(len(sim_ratings)):
+        for movie in sim_ratings[num]:
+            if movie not in userRatings:
                 continue
-            if inner_movies[movie_name] <= sim_threshold:
+            if sim_ratings[num].get(movie) <= sim_threshold:
                 continue
             
-            scores.setdefault(movie_name,0)
-            scores[movie_name] += userRatings[movie_name]*inner_movies[movie_name]
-            
-            totalSim.setdefault(movie_name,0)
-            totalSim[movie_name] += inner_movies[movie_name]
+            scores += userRatings[movie]*sim_ratings[num].get(movie)
+            totalSim += sim_ratings[num].get(movie)
     
-    rankings = [(score/totalSim[item], item) for item, score in scores.items()]       
-    rankings.sort()
-    rankings.reverse()
     
-    return rankings        
-            
-def loo_cv_sim(prefs, movie_title_to_id, sim, user, algo, sim_matrix, sim_threshold=0):
+    if totalSim != 0:
+        predicted_score = (scores/totalSim)
+    
+    try:
+        return predicted_score
+    except UnboundLocalError:
+        return False
+
+def loo_cv_sim(prefs, movie_title_to_id, sim, algo, sim_matrix, sim_threshold=0):
     '''
     Leave-One_Out Evaluation: evaluates recommender system ACCURACY
      Parameters:
@@ -781,34 +788,27 @@ def loo_cv_sim(prefs, movie_title_to_id, sim, user, algo, sim_matrix, sim_thresh
     # Create a temp copy of prefs
     prefs_cp = copy.deepcopy(prefs)
 
-    for i in prefs:
+    for user in prefs:
         # Progress status
         c += 1
         if c % 25 == 0:
             percent_complete = (100*c)/len(prefs)
             print("%.2f %% complete" % percent_complete)
 
-        for item in prefs[i]:
-            removed_rating = prefs_cp[i].pop(item)
-            recs = algo(prefs_cp, movie_title_to_id, sim_matrix, user, sim_threshold)
+        for item in prefs[user]:
+            removed_rating = prefs_cp[user].pop(item)
+            #print(item)
+            recs = algo(prefs_cp, movie_title_to_id, sim_matrix, user, item, sim_threshold)
             
-            for rec in recs:
-                if item in rec:
-                    pred_found = True
-                    
-                    predicted_rating = rec[0]
-                    error_mse = (predicted_rating - removed_rating)**2
-                    error_mae = abs(predicted_rating - removed_rating)
-                    mse_list.append(error_mse)
-                    mae_list.append(error_mae)
-                    # print('User : {}, Item: {}, Prediction {}, Actual: {}, Error: {}, Absolute Error: {}'.format(
-                    # user, item, predicted_rating, removed_rating, error_mse, error_mae))
-            if pred_found == False:
-                # print('From loo_cv(), No prediction calculated for item {}, user {} in pred_list: {}'.format(
-                # item, user, recs))
-                pass
-            pred_found = False
-            prefs_cp[user][item] = removed_rating
+            
+            if recs != False:        
+                predicted_rating = recs
+                error_mse = (predicted_rating - removed_rating)**2
+                error_mae = abs(predicted_rating - removed_rating)
+                mse_list.append(error_mse)
+                mae_list.append(error_mae)
+                   
+                prefs_cp[user][item] = removed_rating
 
     errors['mse'] = np.average(mse_list)
     errors['mae'] = np.average(mae_list)
@@ -818,7 +818,6 @@ def loo_cv_sim(prefs, movie_title_to_id, sim, user, algo, sim_matrix, sim_thresh
     error_lists['mae'] = mae_list
 
     return errors, error_lists
-
 
 def main():
     
@@ -1033,6 +1032,7 @@ def main():
 
         elif file_io == 'CBR-FE' or file_io == 'cbr-fe':
             print()
+            method = "FE"
             # determine the U-I matrix to use ..
             if len(prefs) > 0 and len(prefs) <= 10: # critics
                 print('critics') 
@@ -1163,15 +1163,17 @@ def main():
                 print()
         
         elif file_io == 'LCVSIM' or file_io == 'lcvsim':
-            print()
-            
-            updated_matrix = update_Cosim_Matrix(movie_title_to_id,itemsim,cosim_matrix,weight_factor)
-            updated_dict = new_dictionary(movie_title_to_id,updated_matrix)
+            R = to_array(prefs)
+            feature_str = to_string(features)                 
+            feature_docs = to_docs(feature_str, genres)
             movie_title_to_id = movie_to_ID(movies)
-            
-            
-            if len(prefs) > 0 and updated_dict != {}:
-                print('LOO_CV_SIM Evaluation')
+            print()
+            if method == "TF":
+                
+                updated_matrix = update_Cosim_Matrix(movie_title_to_id,itemsim,cosim_matrix,weight_factor)
+                updated_dict = new_dictionary(movie_title_to_id,updated_matrix)
+                if len(prefs) > 0 and updated_dict != {}:
+                    print('LOO_CV_SIM Evaluation')
 
                 # check for small or large dataset (for print statements)
                 if len(prefs) <= 7:
@@ -1184,14 +1186,34 @@ def main():
                 else:
                     sim = sim_distance
                 errors, error_lists = loo_cv_sim(
-                    prefs, movie_title_to_id, sim, userID, getRecommendedItems, updated_dict, sim_threshold=sim_threshold)
-                print('Errors for %s: MSE = %.5f, MAE = %.5f, RMSE = %.5f, len(SE list): %d, using %s with sim_threshold >%0.1f and sim_weighting of %s'
+                    prefs, movie_title_to_id, sim, getRecommendedItems, updated_dict, sim_threshold=sim_threshold)
+                print('Errors for %s: MSE = %.5f, MAE = %.5f, RMSE = %.5f, len(SE list): %d, using %s with sim_threshold >%f and sim_weighting of %s'
                       % (prefs_name, errors['mse'], errors['mae'], errors['rmse'], len(error_lists['(r)mse']), sim_method, sim_threshold, str(len(error_lists['(r)mse']))+'/' + str(sim_weighting)))
                 print()
 
+            
+            
             else:
-                print(
-                    'Empty dictionary, run R(ead) OR Empty Sim Matrix, run Simu(ilarity matrix!')
+                cosim_matrix = cosine_sim(feature_docs)
+                updated_dict = new_dictionary(movie_title_to_id,cosim_matrix) 
+                if len(prefs) > 0 and updated_dict != {}:
+                    print('LOO_CV_SIM Evaluation')
+
+                    # check for small or large dataset (for print statements)
+                    if len(prefs) <= 7:
+                        prefs_name = 'critics'
+                    else:
+                        prefs_name = 'MLK-100k'
+
+                    sim_method = "CBR-FE"
+                    sim = "FE"
+                    sim_threshold = 0
+                    sim_weighting = 0
+                    errors, error_lists = loo_cv_sim(
+                        prefs, movie_title_to_id, sim, getRecommendedItems, updated_dict, sim_threshold)
+                    print('Errors for %s: MSE = %.5f, MAE = %.5f, RMSE = %.5f, len(SE list): %d, using %s with sim_threshold >%0.1f and sim_weighting of %s'
+                          % (prefs_name, errors['mse'], errors['mae'], errors['rmse'], len(error_lists['(r)mse']), sim_method, sim_threshold, str(len(error_lists['(r)mse']))+'/' + str(sim_weighting)))
+                    print()
 
 
         else:
