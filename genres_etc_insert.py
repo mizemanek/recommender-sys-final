@@ -920,6 +920,7 @@ def main():
                 print()
 
         elif file_io == 'TFIDF' or file_io == 'tfidf':
+            method = "TFIDF"
             if len(prefs) > 0 and len(prefs) <= 10: # critics
                 # convert prefs dictionary into 2D list
                 R = to_array(prefs)
@@ -1056,6 +1057,7 @@ def main():
           
         elif file_io == 'CBR-TF' or file_io == 'cbr-tf':
             print()
+            method = "CBR-TF"
             if len(prefs) > 0:
                 ready = False  # subc command in progress
 
@@ -1163,57 +1165,57 @@ def main():
                 print()
         
         elif file_io == 'LCVSIM' or file_io == 'lcvsim':
-            R = to_array(prefs)
-            feature_str = to_string(features)                 
-            feature_docs = to_docs(feature_str, genres)
-            movie_title_to_id = movie_to_ID(movies)
-            print()
-            if method == "TF":
-                
-                updated_matrix = update_Cosim_Matrix(movie_title_to_id,itemsim,cosim_matrix,weight_factor)
-                updated_dict = new_dictionary(movie_title_to_id,updated_matrix)
-                if len(prefs) > 0 and updated_dict != {}:
-                    print('LOO_CV_SIM Evaluation')
+              R = to_array(prefs)
+              feature_str = to_string(features)                 
+              feature_docs = to_docs(feature_str, genres)
+              movie_title_to_id = movie_to_ID(movies)
+              print()
+              if method == "CBR-TF":
+                     updated_matrix = update_Cosim_Matrix(movie_title_to_id,itemsim,cosim_matrix,weight_factor)
+                     updated_dict = new_dictionary(movie_title_to_id,updated_matrix)
+                     if len(prefs) > 0 and updated_dict != {}:
+                     print('LOO_CV_SIM Evaluation')
 
-                # check for small or large dataset (for print statements)
-                if len(prefs) <= 7:
-                    prefs_name = 'critics'
-                else:
-                    prefs_name = 'MLK-100k'
+                     # check for small or large dataset (for print statements)
+                     if len(prefs) <= 7:
+                            prefs_name = 'critics'
+                     else:
+                            prefs_name = 'MLK-100k'
 
-                if sim_method == 'sim_pearson':
-                    sim = sim_pearson
-                else:
-                    sim = sim_distance
-                errors, error_lists = loo_cv_sim(
-                    prefs, movie_title_to_id, sim, getRecommendedItems, updated_dict, sim_threshold=sim_threshold)
-                print('Errors for %s: MSE = %.5f, MAE = %.5f, RMSE = %.5f, len(SE list): %d, using %s with sim_threshold >%f and sim_weighting of %s'
-                      % (prefs_name, errors['mse'], errors['mae'], errors['rmse'], len(error_lists['(r)mse']), sim_method, sim_threshold, str(len(error_lists['(r)mse']))+'/' + str(sim_weighting)))
-                print()
+                     if sim_method == 'sim_pearson':
+                            sim = sim_pearson
+                     else:
+                            sim = sim_distance
+                     errors, error_lists = loo_cv_sim(
+                            prefs, movie_title_to_id, sim, getRecommendedItems, updated_dict, sim_threshold=sim_threshold)
+                     print('Errors for %s: MSE = %.5f, MAE = %.5f, RMSE = %.5f, len(SE list): %d, using %s with sim_threshold >%f and sim_weighting of %s'
+                            % (prefs_name, errors['mse'], errors['mae'], errors['rmse'], len(error_lists['(r)mse']), sim_method, sim_threshold, str(len(error_lists['(r)mse']))+'/' + str(sim_weighting)))
+                     print()
 
             
             
-            else:
-                cosim_matrix = cosine_sim(feature_docs)
-                updated_dict = new_dictionary(movie_title_to_id,cosim_matrix) 
-                if len(prefs) > 0 and updated_dict != {}:
-                    print('LOO_CV_SIM Evaluation')
+              else:
+                     cosim_matrix = cosine_sim(feature_docs)
+                     updated_dict = new_dictionary(movie_title_to_id,cosim_matrix) 
+                     if len(prefs) > 0 and updated_dict != {}:
+                            print('LOO_CV_SIM Evaluation')
 
-                    # check for small or large dataset (for print statements)
-                    if len(prefs) <= 7:
-                        prefs_name = 'critics'
-                    else:
-                        prefs_name = 'MLK-100k'
+                     # check for small or large dataset (for print statements)
+                            if len(prefs) <= 7:
+                                   prefs_name = 'critics'
+                            else:
+                                   prefs_name = 'MLK-100k'
 
-                    sim_method = "CBR-FE"
-                    sim = "FE"
-                    sim_threshold = 0
-                    sim_weighting = 0
-                    errors, error_lists = loo_cv_sim(
-                        prefs, movie_title_to_id, sim, getRecommendedItems, updated_dict, sim_threshold)
-                    print('Errors for %s: MSE = %.5f, MAE = %.5f, RMSE = %.5f, len(SE list): %d, using %s with sim_threshold >%0.1f and sim_weighting of %s'
-                          % (prefs_name, errors['mse'], errors['mae'], errors['rmse'], len(error_lists['(r)mse']), sim_method, sim_threshold, str(len(error_lists['(r)mse']))+'/' + str(sim_weighting)))
-                    print()
+                            sim_method = "TFIDF"
+                            sim = "TF"
+                            sim_threshold = 0
+                            sim_weighting = 0
+                            errors, error_lists = loo_cv_sim(
+                                   prefs, movie_title_to_id, sim, getRecommendedItems, updated_dict, sim_threshold)
+                            print('Errors for %s: MSE = %.5f, MAE = %.5f, RMSE = %.5f, len(SE list): %d, using %s with sim_threshold >%f and sim_weighting of %s'
+                                   % (prefs_name, errors['mse'], errors['mae'], errors['rmse'], len(error_lists['(r)mse']), sim_method, sim_threshold, str(len(error_lists['(r)mse']))+'/' + str(sim_weighting)))
+                            print()
+        
 
 
         else:
