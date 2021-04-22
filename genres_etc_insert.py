@@ -446,6 +446,8 @@ def get_FE_recommendations(prefs, features, movie_title_to_id, user):
     
     #Calc normalized vector
     overall_sum = np.sum(totals)
+    if overall_sum == 0:
+        return
     normalized_vector = totals/overall_sum
     
     
@@ -760,6 +762,52 @@ def getRecommendedItems(prefs, movie_title_to_id, itemMatch, user, item, sim_thr
         return predicted_score
     except UnboundLocalError:
         return False
+    
+def loo_cv_sim_fe(prefs, movie_title_to_id, features):
+    
+    
+
+    errors = {}
+    error_lists = {}
+    mse_list = []
+    mae_list = []
+    recs = []
+    prefs_cp = copy.deepcopy(prefs)
+    c = 0
+    
+    for user in prefs:
+        c += 1
+        if True:
+            percent_complete = (100*c)/len(prefs)
+            print("%.2f %% complete" % percent_complete)
+            
+            
+        for item in prefs[user]:
+            removed_rating = prefs_cp[user].pop(item)
+    
+            pred = get_FE_recommendations( prefs_cp, features, movie_title_to_id, user)
+            
+            if pred != None:
+                for result in pred:
+                    
+                    if result[1] == item:
+                        error_mse = (result[0] - removed_rating)**2
+                        error_mae = abs(result[0] - removed_rating)
+                        mse_list.append(error_mse)
+                        mae_list.append(error_mae)
+            
+                        prefs_cp[user][item] = removed_rating
+                
+        
+    errors['mse'] = np.average(mse_list)
+    errors['mae'] = np.average(mae_list)
+    errors['rmse'] = np.sqrt(np.average(mse_list))
+    
+    error_lists['(r)mse'] = mse_list
+    error_lists['mae'] = mae_list
+    
+    return errors, error_lists
+
 
 def loo_cv_sim(prefs, movie_title_to_id, sim, algo, sim_matrix, sim_threshold=0):
     '''
@@ -1170,22 +1218,30 @@ def main():
               feature_docs = to_docs(feature_str, genres)
               movie_title_to_id = movie_to_ID(movies)
               print()
+              #errors, error_lists = loo_cv_sim_fe(prefs, movie_title_to_id, features)
+              #print('Errors for %s: MSE = %.5f, MAE = %.5f, RMSE = %.5f, len(SE list): %d, using %s with sim_threshold >%f and sim_weighting of %s' % (prefs_name, errors['mse'], errors['mae'], errors['rmse'], len(error_lists['(r)mse']), sim_method, sim_threshold, str(len(error_lists['(r)mse']))+'/' + str(sim_weighting)))
+              #print()
+              
               if method == "CBR-TF":
                      updated_matrix = update_Cosim_Matrix(movie_title_to_id,itemsim,cosim_matrix,weight_factor)
                      updated_dict = new_dictionary(movie_title_to_id,updated_matrix)
                      if len(prefs) > 0 and updated_dict != {}:
-                     print('LOO_CV_SIM Evaluation')
+                         print('LOO_CV_SIM Evaluation')
 
                      # check for small or large dataset (for print statements)
                      if len(prefs) <= 7:
                             prefs_name = 'critics'
                      else:
                             prefs_name = 'MLK-100k'
+                            
+                    
 
                      if sim_method == 'sim_pearson':
                             sim = sim_pearson
                      else:
                             sim = sim_distance
+                            
+                
                      errors, error_lists = loo_cv_sim(
                             prefs, movie_title_to_id, sim, getRecommendedItems, updated_dict, sim_threshold=sim_threshold)
                      print('Errors for %s: MSE = %.5f, MAE = %.5f, RMSE = %.5f, len(SE list): %d, using %s with sim_threshold >%f and sim_weighting of %s'
@@ -1264,4 +1320,3 @@ rec for 340 =  [
 (4.823001861184155, 'Swan Princess, The (1994)')]
 
 '''
-
