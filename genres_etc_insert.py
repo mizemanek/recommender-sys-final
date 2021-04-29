@@ -479,6 +479,112 @@ def get_FE_recommendations(prefs, features, movie_title_to_id, user):
     
     
     return pred
+
+def get_FE_recommendations_2(prefs, features, movie_title_to_id, user, key):
+    '''
+        Calculates recommendations for a given user
+        FOR USE IN LOOCVSIM FE
+
+        Parameters:
+        -- prefs: dictionary containing user-item matrix
+        -- features: an np.array whose height is based on number of items
+                     and width equals the number of unique features (e.g., genre)
+        -- movie_title_to_id: dictionary that maps movie title to movieid
+        -- user: string containing name of user requesting recommendation        
+        
+        Returns:
+        -- ranknigs: A list of recommended items with 0 or more tuples, 
+           each tuple contains (predicted rating, item name).
+           List is sorted, high to low, by predicted rating.
+           An empty list is returned when no recommendations have been calc'd.
+        
+    '''
+    num_feat = 0
+    path = ''
+    item_file = ''
+    if len(prefs) > 10:
+        num_feat = 19
+        path = 'data/ml-100k/'
+        item_file = 'u.item'
+    else:
+        num_feat = 12
+        path = 'data/'
+        item_file = 'critics_movies.item'
+
+    #Create the MOVIE-FEATURE matrix
+    counter = 0
+    path = 'data/ml-100k/'
+    with open (path + '/' + item_file, encoding='iso8859') as myfile: 
+        # this encoding is required for some datasets: encoding='iso8859'
+        for line in myfile:
+            (line_data)=line.split('|')
+            line_data = line_data[-num_feat:]
+            features[counter] = line_data
+            counter += 1
+    
+    #Create a users feature profile
+    feature_preference = {}
+    for item in prefs[user]:
+        feature_preference[item] = features[int(movie_title_to_id[item])-1]
+
+    
+    #Multiply features by their associated ratings
+    for item in prefs[user].items(): #item[0] is movie str, item[1] is rating
+        if(item[0] != None):
+            for i in range(len(feature_preference[item[0]])):
+                feature_preference[item[0]][i] *= item[1]
+                
+    #Create totals vector
+    totals = [0] * num_feat 
+    for arr in feature_preference.values():
+        totals = np.add(totals, arr)
+
+
+    #Create feature frequency vector
+    rated_feature_freq = [0] * num_feat 
+    for arr in feature_preference.values():
+        for j in range(len(arr)):
+            if(arr[j] != 0):
+                rated_feature_freq[j] += 1
+            else:
+                
+                #rated_feature_freq[j] += .0000000000000000000001
+                pass
+    
+    #Calc normalized vector
+    overall_sum = np.sum(totals)
+    if overall_sum == 0:
+        return
+    normalized_vector = totals/overall_sum
+    
+    
+    pred = -1
+        
+    #Create a prediction for unrated items
+    curr_id = int(movie_title_to_id[key])-1
+
+    
+  
+    arr = features[curr_id]
+
+    if (True in np.logical_and(features[curr_id], totals)):
+        array_to_sum = np.multiply(arr, normalized_vector) #hadamard
+        
+        summed = np.sum(array_to_sum)
+        if(summed != 0):
+            normalized_weight = array_to_sum / summed
+        avg_rating_arr = totals / rated_feature_freq
+        components =  np.multiply(avg_rating_arr, normalized_weight)
+
+
+        pred = np.nansum(components)
+        
+
+    
+
+    
+    
+    return pred
 def sim_distance(prefs, person1, person2, sim_weighting=0):
     '''
         Calculate Euclidean distance similarity
@@ -777,37 +883,37 @@ def loo_cv_sim_fe(prefs, movie_title_to_id, features):
     
     for user in prefs:
         c += 1
-        if True:
+        if c % 10 == 0:
             percent_complete = (100*c)/len(prefs)
             print("%.2f %% complete" % percent_complete)
             
-            
+        
         for item in prefs[user]:
             removed_rating = prefs_cp[user].pop(item)
-    
-            pred = get_FE_recommendations( prefs_cp, features, movie_title_to_id, user)
-            
-            if pred != None:
-                for result in pred:
+            movie = item
+ 
+            pred = get_FE_recommendations_2( prefs_cp, features, movie_title_to_id, user, movie)
+     
+            if pred >= -0.1 and pred <= 5.1:
                     
-                    if result[1] == item:
-                        error_mse = (result[0] - removed_rating)**2
-                        error_mae = abs(result[0] - removed_rating)
-                        mse_list.append(error_mse)
-                        mae_list.append(error_mae)
-            
-                        prefs_cp[user][item] = removed_rating
-                
+                    
+                error_mse = (pred - removed_rating)**2
+                error_mae = abs(pred - removed_rating)
+                mse_list.append(error_mse)
+                mae_list.append(error_mae)
+    
+                prefs_cp[user][item] = removed_rating
+
         
-    errors['mse'] = np.average(mse_list)
-    errors['mae'] = np.average(mae_list)
-    errors['rmse'] = np.sqrt(np.average(mse_list))
+    errors['mse'] = np.nanmean(mse_list)
+    errors['mae'] = np.nanmean(mae_list)
+    errors['mae_stdev'] = np.nanstd(mae_list)
+    errors['rmse'] = np.sqrt(np.nanmean(mse_list))
     
     error_lists['(r)mse'] = mse_list
     error_lists['mae'] = mae_list
     
     return errors, error_lists
-
 
 def loo_cv_sim(prefs, movie_title_to_id, sim, algo, sim_matrix, sim_threshold=0):
     '''
@@ -886,6 +992,7 @@ def main():
                         'CBR-FE(content-based recommendation Feature Encoding)?, \n'
                         'CBR-TF(content-based recommendation TF-IDF/CosineSim)? \n'
                         'LCVSIM(eave one out cross-validation)? \n'
+                        'LCVSIM-FE(loocv for fe)? \n'
                         '==>> '
                         )
         
@@ -1211,6 +1318,31 @@ def main():
             else:
                 print ('Empty dictionary, read in some data!')
                 print()
+                
+        elif file_io == 'LCVSIM-FE' or file_io == 'lcvsim-fe':
+              R = to_array(prefs)
+              feature_str = to_string(features)                 
+              feature_docs = to_docs(feature_str, genres)
+              movie_title_to_id = movie_to_ID(movies)
+              print()
+              errors, error_lists = loo_cv_sim_fe(prefs, movie_title_to_id, features)
+              print('MSE, MAE, RMSE:')
+              print(errors['mse'])
+              print(errors['mae'])
+              print(errors['rmse'])
+              print()
+              print('len')
+              print(len(error_lists['(r)mse']))
+              print(str(len(error_lists['(r)mse'])))
+              print('stdev of mae')
+              print(errors['mae_stdev'])
+
+      
+
+              
+              print()
+              
+             
         
         elif file_io == 'LCVSIM' or file_io == 'lcvsim':
               R = to_array(prefs)
